@@ -25,13 +25,20 @@ int8_t menucurrentchoice = 0;
 uint8_t menumaxchoices = 6;
 
 String menutext[6] = { "I2C Scan" ,
-                       "Wipe Both" ,
-                       "Show 0x50" ,
-                       "Show 0x51" ,
+                       "Dump EEPROMS" ,
+                       "format eeproms" ,
+                       "show 0x51" ,
                        "Send bank off" ,
-                       "send bank 0x00"
+                       "send bank 0x51"
                        };
 
+// String menutext[6] = { "I2C Scan" ,
+//                        "Dump EEPROMS" ,
+//                        "dump FRAM" ,
+//                        "Send Bank 0x00" ,
+//                        "Send bank 0x01" ,
+//                        "send bank off"
+//                        };
 
 
 void menucommand_00();
@@ -194,6 +201,101 @@ void loop() {
 
 
 
+// utility commands
+
+#define PAGESIZE 32
+
+/// @brief formats an eeprom
+/// @param eepromid the i2c address of the eeprom to format
+void format_eeprom( uint8_t eepromid ) {
+
+  // format the eeprom in 1024 32 byte pages for a total of 32768 bytes.
+
+  for ( uint16_t currentpage = PAGESIZE ; currentpage < 32768 ; currentpage += PAGESIZE ) {
+
+    //Serial.print( "Formatting page " );
+    //Serial.println( currentpage );
+
+    // say hello to the chip
+    wire.beginTransmission( eepromid );
+    // send the page address
+    wire.write( (uint8_t)( ( currentpage >> 8 ) && 0xFF ) );
+    wire.write( (uint8_t)( currentpage && 0xFF ) );
+
+    // now send 32 bytes of data
+    for ( uint8_t i = 0 ; i < PAGESIZE ; i++ ) {
+      wire.write( i );
+    }
+
+    // now say goodbye to the chip
+    wire.endTransmission();
+
+    // now delay for 21ms!!!  to account for the 20ms write time for the eeproms...
+    delay( 21 );
+
+    // all done, cycle around to the next page
+
+  }
+
+}
+
+
+
+
+void dump_eeprom_serial( uint8_t eepromid ) {
+
+  // read 32 k of data from the chip in pagesize chunks
+
+  for ( uint16_t currentpage = 0 ; currentpage < 32768 ; currentpage += PAGESIZE ) {
+
+    // say hello to the chip
+    wire.beginTransmission( eepromid );
+    // send the page address
+    wire.write( (uint8_t)( ( currentpage >> 8 ) && 0xFF ) );
+    wire.write( (uint8_t)( currentpage && 0xFF ) );
+    // say goodbye to the chip
+    wire.endTransmission();
+
+    // now request PAGESIZE bytes
+    wire.requestFrom( eepromid , (uint8_t)(PAGESIZE) );
+
+    uint8_t tempbyte = 0;
+    for ( int i = 0 ; i < PAGESIZE ; i++ ) {
+        tempbyte = wire.read();
+        if ( tempbyte < 0x10 ) { Serial.print( "0" ); }
+        Serial.print( tempbyte , HEX );
+    }
+
+
+    // all done, cycle around to the next page
+    Serial.println();
+
+  }
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+// String menutext[6] = { "I2C Scan" ,
+//                        "Dump EEPROMS" ,
+//                        "dump FRAM" ,
+//                        "Send Bank 0x00" ,
+//                        "Send bank 0x01" ,
+//                        "send bank off"
+//                        };
+
 
 
 
@@ -224,7 +326,20 @@ void menucommand_00() {
 }
 
 
-// wipe both
+
+
+
+// String menutext[6] = { "I2C Scan" ,
+//                        "Dump EEPROMS" ,
+//                        "dump FRAM" ,
+//                        "Send Bank 0x00" ,
+//                        "Send bank 0x01" ,
+//                        "send bank off"
+//                        };
+
+
+
+// dump eeproms
 void menucommand_01() {
   
   // bring up i2c as a master
@@ -232,88 +347,48 @@ void menucommand_01() {
 
   lcd.clear();
   lcd.setCursor( 0 , 0 );
-  lcd.print( "Formatting 0x50" );
+  lcd.print( "Dumping EEPROMS" );
   
-  // wipe chip 0x50
-  wire.beginTransmission( 0x50 );
-  wire.write( 0x00 );
-  wire.write( 0x00 );
-  for ( long i = 0 ; i < 32768 ; i++ ) {
-    wire.write( 0x00 );
-    if ( ( i % 4096 ) == 0 ) { 
-      lcd.clear();
-      lcd.setCursor( 0 , 0 );
-      lcd.print( "Formatting 0x50" );
-      lcd.setCursor( 0 , 1 );
-      lcd.print( i );
-      delay(500);
-    }
+  // for each bank
+  for ( int i = 0 ; i < 8 ; i++ ) {
+
+    // read out 32k
     
+    Serial.print( "Bank: " );
+    Serial.print( i );
+    Serial.println( " : " );
+
+    dump_eeprom_serial( 0x50 + i );
+
+    Serial.println();
+
   }
-  wire.endTransmission();
-
-  // wipe chip 0x50
-  wire.beginTransmission( 0x51 );
-  wire.write( 0x00 );
-  wire.write( 0x00 );
-  for ( long i = 0 ; i < 32768 ; i++ ) {
-    wire.write( 0xFF );
-    if ( ( i % 4096 ) == 0 ) { 
-      lcd.clear();
-      lcd.setCursor( 0 , 0 );
-      lcd.print( "Formatting 0x51" );
-      lcd.setCursor( 0 , 1 );
-      lcd.print( i );
-      delay(500);
-    }
-    
-  }
-  wire.endTransmission();
-
-
-
-
+  
 
 
 }
 
 
-// show 0x50
+// format all
 void menucommand_02() {
 
   wire.begin();
   
   lcd.clear();
   lcd.setCursor( 0 , 0 );
+  lcd.print( "Formatting" );
 
-  uint8_t data[16] = {0};
-
-  wire.beginTransmission( 0x50 );
-  wire.write( 0x00 );
-  wire.write( 0x00 );
-  wire.endTransmission();
-
-  // receive 16 bytes
-  wire.requestFrom( 0x50 , 16 );
-  for ( int i = 0 ; i < 16 ; i++ ) {
-    data[i] = (uint8_t)( wire.read() );
-  }
-
-
-  // now display it
-  lcd.setCursor( 0 , 0 );
+  // format eeproms
   for ( int i = 0 ; i < 8 ; i++ ) {
-    if ( data[i] < 16 ) { lcd.print( "0" ); }
-    lcd.print( data[i] , HEX );
+
+    lcd.setCursor( 0 , 1 );
+    lcd.print( i );
+
+    format_eeprom( 0x50 + i );
+
   }
 
-  lcd.setCursor( 0 , 1 );
-  for ( int i = 8 ; i < 16 ; i++ ) {
-    if ( data[i] < 16 ) { lcd.print( "0" ); }
-    lcd.print( data[i] , HEX );
-  }
-
-  while(1);
+  //while(1);
 
 }
 
@@ -388,7 +463,7 @@ void menucommand_05() {
   lcd.setCursor( 0 , 0 );
 
   wire.beginTransmission( 0x70 );
-  wire.write( 0b00000001 );
+  wire.write( 0b00000010 );
   wire.endTransmission();
 
   lcd.print( "Done!" );
